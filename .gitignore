@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# UV
+.uv/
+uv.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MCP specific
+*.log
+test.db
+test.db-*
+
+digest.txt
+
+# JSON files (except examples)
+*.json
+!*.example.json
+
+# Serena directory
+.serena/
+
+# Test files
+test*.py
+
+# Configuration files
+*.ini
+
+# Hidden files and directories (dotfiles)
+.*
+!.gitignore
