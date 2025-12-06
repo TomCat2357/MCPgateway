@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mcp-gateway = "mcp-gateway:main"
+mcp-gateway = "mcp_gateway_server:main"
 
 [project.optional-dependencies]
 dev = [
@@ -24,7 +24,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 only-include = [
-    "mcp-gateway-server.py",
+    "mcp_gateway_server.py",
     "children_config.example.json",
     "children_abstract.example.json",
     "example.mcp.json",
