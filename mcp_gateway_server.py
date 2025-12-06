@@ -21,6 +21,9 @@ from mcp.server.fastmcp import FastMCP
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+class ChildrenConfigError(Exception):
+    """子MCPサーバー設定の読み込みに関するエラー。"""
+
 # stderrを捨てるためのnullデバイス（lifespanで管理）
 _devnull_handle: Optional[TextIO] = None
 
@@ -50,7 +53,6 @@ def setup_logging():
     logging.basicConfig(level=log_level, handlers=log_handlers, force=True)
 
 
-setup_logging()
 logger = logging.getLogger("parent_mcp")
 
 def get_devnull() -> TextIO:
@@ -98,12 +100,11 @@ def parse_children_config(config_path: str) -> dict:
         パースされた設定辞書（mcpServersキーを含む）
 
     Raises:
-        SystemExit: ファイルが存在しない、拡張子が不正、パースエラーの場合
+        ChildrenConfigError: ファイルが存在しない、拡張子が不正、パースエラーの場合
     """
     # ファイルの存在確認
     if not os.path.exists(config_path):
-        print(f"Error: Config file not found: {config_path}", file=sys.stderr)
-        sys.exit(1)
+        raise ChildrenConfigError(f"Config file not found: {config_path}")
 
     # 拡張子の確認
     if config_path.endswith('.json'):
@@ -112,43 +113,40 @@ def parse_children_config(config_path: str) -> dict:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
         except json.JSONDecodeError as e:
-            print(f"Error: Failed to parse JSON config file '{config_path}': {e}", file=sys.stderr)
-            sys.exit(1)
+            raise ChildrenConfigError(
+                f"Failed to parse JSON config file '{config_path}': {e}"
+            ) from e
         except Exception as e:
-            print(f"Error: Failed to read config file '{config_path}': {e}", file=sys.stderr)
-            sys.exit(1)
+            raise ChildrenConfigError(
+                f"Failed to read config file '{config_path}': {e}"
+            ) from e
 
     elif config_path.endswith('.toml'):
         # TOMLファイルをパース
         if tomllib is None:
-            print(
-                "Error: TOML support is not available. "
-                "Please install 'tomli' package (pip install tomli) or use Python 3.11+.",
-                file=sys.stderr
+            raise ChildrenConfigError(
+                "TOML support is not available. "
+                "Please install 'tomli' package (pip install tomli) or use Python 3.11+."
             )
-            sys.exit(1)
 
         try:
             with open(config_path, 'rb') as f:
                 config = tomllib.load(f)
         except Exception as e:
-            print(f"Error: Failed to parse TOML config file '{config_path}': {e}", file=sys.stderr)
-            sys.exit(1)
+            raise ChildrenConfigError(
+                f"Failed to parse TOML config file '{config_path}': {e}"
+            ) from e
 
     else:
-        print(
-            f"Error: Config file must be .json or .toml, got: {config_path}",
-            file=sys.stderr
+        raise ChildrenConfigError(
+            f"Config file must be .json or .toml, got: {config_path}"
         )
-        sys.exit(1)
 
     # mcpServersキーまたはmcp_serversキーの確認
     if 'mcpServers' not in config and 'mcp_servers' not in config:
-        print(
-            f"Error: Config file must contain 'mcpServers' (JSON) or 'mcp_servers' (TOML) key.",
-            file=sys.stderr
+        raise ChildrenConfigError(
+            "Config file must contain 'mcpServers' (JSON) or 'mcp_servers' (TOML) key."
         )
-        sys.exit(1)
 
     # TOMLの場合、mcp_serversをmcpServersに変換
     if 'mcp_servers' in config:
@@ -213,13 +211,7 @@ def resolve_children_abstract_path(argv=None):
     return None
 
 
-CHILDREN_ABSTRACT_PATH = resolve_children_abstract_path()
-
-if not CHILDREN_ABSTRACT_PATH:
-    print(
-        "Warning: --children-abstract not provided. get_children_abstract tool will not be available.",
-        file=sys.stderr,
-    )
+CHILDREN_ABSTRACT_PATH: Optional[str] = None
 
 
 def get_config() -> dict:
@@ -434,6 +426,29 @@ def get_server_summary() -> str:
     return GENERAL_DESCRIPTION.strip()
 
 
+@mcp.resource("mcp://children_servers")
+def get_children_servers_resource() -> str:
+    """登録されている子MCPサーバーの概要情報を返します。"""
+    if not CHILDREN_ABSTRACT_PATH:
+        return "{}"
+
+    if not os.path.exists(CHILDREN_ABSTRACT_PATH):
+        return "{}"
+
+    try:
+        with open(CHILDREN_ABSTRACT_PATH, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # JSONとして検証
+        json.loads(content)
+
+        return content
+    except json.JSONDecodeError:
+        return "{}"
+    except Exception:
+        return "{}"
+
+
 # ---------------------------------------------------------
 # Tools
 # ---------------------------------------------------------
@@ -591,7 +606,7 @@ async def get_schema(child_name: str) -> str:
 async def execute_child_tool(
     child_name: str,
     tool_name: str,
-    tool_args: dict,
+    tool_args: Dict[str, Any],
     head_chars: Optional[int] = None,
     tail_chars: Optional[int] = None
 ) -> str:
@@ -671,37 +686,38 @@ async def execute_child_tool(
     return truncate_output(full_text, head, tail)
 
 
-@mcp.tool()
-def get_children_abstract() -> str:
+
+
+def init_parent_server(config: dict, children_abstract_path: Optional[str] = None) -> None:
     """
-    子サーバーの概要情報を取得します。
-    起動時に--children-abstractで指定されたJSONファイルの内容を返します。
+    親MCPサーバーのグローバル設定を初期化する。
+    他のモジュールから利用する場合もここを呼び出す。
     """
-    if not CHILDREN_ABSTRACT_PATH:
-        return "Error: --children-abstract was not provided at startup."
-
-    if not os.path.exists(CHILDREN_ABSTRACT_PATH):
-        return f"Error: File not found: {CHILDREN_ABSTRACT_PATH}"
-
-    try:
-        with open(CHILDREN_ABSTRACT_PATH, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # JSONとして検証
-        json.loads(content)
-
-        return content
-    except json.JSONDecodeError as e:
-        return f"Error: Invalid JSON in {CHILDREN_ABSTRACT_PATH}: {str(e)}"
-    except Exception as e:
-        return f"Error reading {CHILDREN_ABSTRACT_PATH}: {str(e)}"
+    global _CHILDREN_CONFIG, CHILDREN_ABSTRACT_PATH
+    _CHILDREN_CONFIG = config
+    CHILDREN_ABSTRACT_PATH = children_abstract_path
 
 
 def main(argv=None):
     global _CHILDREN_CONFIG
+    setup_logging()
     # --children-configからconfigファイルパスを取得してパース
     config_path = resolve_children_config_path(argv)
-    _CHILDREN_CONFIG = parse_children_config(config_path)
+    try:
+        _CHILDREN_CONFIG = parse_children_config(config_path)
+    except ChildrenConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    children_abstract_path = resolve_children_abstract_path(argv)
+    if not children_abstract_path:
+        print(
+            "Warning: --children-abstract not provided. "
+            "get_children_abstract tool will not be available.",
+            file=sys.stderr,
+        )
+
+    init_parent_server(_CHILDREN_CONFIG, children_abstract_path)
 
     mcp.run(transport='stdio')
 
