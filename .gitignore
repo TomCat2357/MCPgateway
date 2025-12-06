@@ -36,6 +36,7 @@ digest.txt
 # JSON files (except examples)
 *.json
 !*.example.json
+!example.mcp.json
 
 # Serena directory
 .serena/

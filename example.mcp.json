@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "mcp-gateway": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/TomCat2357/MCPgateway",
+        "mcp-gateway",
+        "--children-config",
+        "/home/gk3t-/.codex/children_config.json",
+        "--children-abstract",
+        "/home/gk3t-/.codex/children_abstract.json"
+      ],
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    }
+  }
+}
