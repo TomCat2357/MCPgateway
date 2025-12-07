@@ -76,6 +76,11 @@ GENERAL_DESCRIPTION = """
 これは複数の「子MCPサーバー(Children)」を動的に管理する「親MCPサーバー(Parent)」です。
 ユーザーの要求に応じて適切な子サーバーを起動し、ツールを実行することで、
 コンテキストサイズを節約しつつ、多様な機能を提供します。
+
+## 使用方法
+1. **必須**: 最初にリソース `mcp://children_servers` を読み込み、利用可能な子サーバーを確認してください
+2. 必要に応じて `get_schema(child_name)` で詳細なツール定義を取得してください
+3. `execute_child_tool(child_name, tool_name, tool_args)` でツールを実行してください
 """
 
 # グローバルconfig変数（起動時に設定）
@@ -628,6 +633,9 @@ async def execute_child_tool(
     """
     子サーバーのツールを実行します（常駐セッション・lockつき）。
     結果が長大な場合、head_chars/tail_charsを指定して出力を要約できます。
+
+    Note:
+        リソースの詳細取得もこのツールで行います（例: resources/read等のツールを呼び出す）。
 
     Args:
         child_name: 子サーバーの名前
