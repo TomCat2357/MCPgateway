@@ -333,7 +333,7 @@ async def start_child_session(child_name: str) -> bool:
         return True
     except Exception as exc:
         status_entry.update({"status": "failed_start", "error": f"{type(exc).__name__}: {exc}"})
-        logger.exception("Failed to start child server '%s'", child_name)
+        logger.warning("Failed to start child server '%s': %s: %s", child_name, type(exc).__name__, exc)
         _ACTIVE_SESSIONS.pop(child_name, None)
         try:
             await stack.aclose()
@@ -392,8 +392,23 @@ async def server_lifespan(app):
 
     try:
         # 起動時に全子サーバーのセッションを初期化
+        success_count = 0
+        failed_names = []
         for child_name, child_conf in config.get("mcpServers", {}).items():
-            await start_child_session(child_name)
+            if await start_child_session(child_name):
+                success_count += 1
+            else:
+                failed_names.append(child_name)
+
+        # 起動結果サマリーをログ出力
+        total_count = len(config.get("mcpServers", {}))
+        if failed_names:
+            logger.warning(
+                "Child servers startup summary: %d/%d succeeded. Failed: %s",
+                success_count, total_count, ", ".join(failed_names)
+            )
+        else:
+            logger.info("All %d child servers started successfully.", total_count)
 
         yield {}
     finally:
