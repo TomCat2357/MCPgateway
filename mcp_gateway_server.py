@@ -111,8 +111,11 @@ def parse_children_config(config_path: str) -> dict:
     if not os.path.exists(config_path):
         raise ChildrenConfigError(f"Config file not found: {config_path}")
 
+    _, ext = os.path.splitext(config_path)
+    ext = ext.lower()
+
     # 拡張子の確認
-    if config_path.endswith('.json'):
+    if ext == '.json':
         # JSONファイルをパース
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
@@ -126,7 +129,7 @@ def parse_children_config(config_path: str) -> dict:
                 f"Failed to read config file '{config_path}': {e}"
             ) from e
 
-    elif config_path.endswith('.toml'):
+    elif ext == '.toml':
         # TOMLファイルをパース
         if tomllib is None:
             raise ChildrenConfigError(
@@ -147,17 +150,65 @@ def parse_children_config(config_path: str) -> dict:
             f"Config file must be .json or .toml, got: {config_path}"
         )
 
+    def _normalize_servers(raw: Any) -> Dict[str, Any]:
+        """
+        TOMLの配列テーブル([[mcp_servers]])にも対応し、mcpServers用のdictへ正規化する。
+        """
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, list):
+            normalized: Dict[str, Any] = {}
+            for idx, entry in enumerate(raw):
+                if not isinstance(entry, dict):
+                    raise ChildrenConfigError(
+                        f"Entry at index {idx} in 'mcp_servers' must be a table/object."
+                    )
+                name = entry.get("name")
+                if not name:
+                    raise ChildrenConfigError(
+                        f"Entry at index {idx} in 'mcp_servers' must include 'name'."
+                    )
+                normalized[name] = {k: v for k, v in entry.items() if k != "name"}
+            return normalized
+        raise ChildrenConfigError("'mcp_servers'/'mcpServers' must be a table or array of tables.")
+
     # mcpServersキーまたはmcp_serversキーの確認
-    if 'mcpServers' not in config and 'mcp_servers' not in config:
+    mcp_servers: Optional[Dict[str, Any]] = None
+    if "mcpServers" in config:
+        raw = config["mcpServers"]
+        if not isinstance(raw, dict):
+            raise ChildrenConfigError("'mcpServers' must be an object mapping child name to config.")
+        mcp_servers = raw
+    elif "mcp_servers" in config:
+        mcp_servers = _normalize_servers(config["mcp_servers"])
+
+    if mcp_servers is None:
         raise ChildrenConfigError(
             "Config file must contain 'mcpServers' (JSON) or 'mcp_servers' (TOML) key."
         )
 
-    # TOMLの場合、mcp_serversをmcpServersに変換
-    if 'mcp_servers' in config:
-        config['mcpServers'] = config.pop('mcp_servers')
-
+    # 正規化したキーで返す
+    config["mcpServers"] = mcp_servers
     return config
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    """共通のCLIパーサーを構築する（--help対応）。"""
+    parser = argparse.ArgumentParser(
+        description="Parent MCP server that manages child MCP servers.",
+    )
+    parser.add_argument(
+        "--children-config",
+        dest="children_config",
+        required=True,
+        help="Path to children config file (.json or .toml)",
+    )
+    parser.add_argument(
+        "--children-abstract",
+        dest="children_abstract",
+        help="Path to children_abstract.json (provides summaries for child servers).",
+    )
+    return parser
 
 
 def resolve_children_config_path(argv=None) -> str:
@@ -173,34 +224,13 @@ def resolve_children_config_path(argv=None) -> str:
     Raises:
         SystemExit: --children-configが指定されていない場合
     """
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument(
-        "--children-config",
-        dest="children_config",
-        required=True,
-        help="Path to children config file (.json or .toml)",
-    )
-
-    try:
-        args, _ = parser.parse_known_args(argv)
-    except SystemExit:
-        print(
-            "Error: --children-config argument is required. "
-            "Please specify a .json or .toml config file.",
-            file=sys.stderr
-        )
-        sys.exit(1)
-
+    parser = build_arg_parser()
+    args, _ = parser.parse_known_args(argv)
     return args.children_config
 
 def resolve_children_abstract_path(argv=None):
     """CLI引数から--children-abstractで指定された.jsonファイルパスを解決する（未指定ならNone）。"""
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument(
-        "--children-abstract",
-        dest="children_abstract",
-        help="Path to children_abstract.json (provides summaries for child servers).",
-    )
+    parser = build_arg_parser()
     args, _ = parser.parse_known_args(argv)
 
     if args.children_abstract:

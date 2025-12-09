@@ -4,13 +4,13 @@
 
 ## 概要
 
-- `children_config.json` に定義した子サーバーを起動し、常駐セッション+lockで衝突を防ぎながらツールを呼び出します。
+- `children_config.(json|toml)` に定義した子サーバーを起動し、常駐セッション+lockで衝突を防ぎながらツールを呼び出します。
 - 子サーバーのスキーマ取得(`get_schema`)や任意ツール呼び出し(`execute_child_tool`)を1つのインターフェースで提供します。
 - `children_abstract.json` があれば、子サーバー概要をリソースとして返します。
 
 ## 子サーバー例（同梱テンプレート）
 
-`children_config.example.json` では以下を登録しています。`children_abstract.example.json` と合わせて参考にしてください。
+`children_config.example.json`/`children_config.example.toml` では以下を登録しています。`children_abstract.example.json` と合わせて参考にしてください。
 
 - `serena`: コードベースのシンボリック検索/編集、メモ管理、限定的なシェル実行（tools: read_file, find_file, find_symbol, replace_content, execute_shell_command など）
 - `context7`: ライブラリ名→Context7互換ID解決とドキュメント取得（resolve-library-id, get-library-docs）
@@ -24,10 +24,14 @@
    ```
 2. 設定ファイルを作成（テンプレートをコピー）
    ```bash
+   # JSONで使う場合
    cp children_config.example.json children_config.json
+
+   # codex CLIなどTOML形式を使う場合
+   cp children_config.example.toml children_config.toml
    cp children_abstract.example.json children_abstract.json
    ```
-   `children_config.json` 内で各子サーバーのコマンド/引数/環境変数を環境に合わせて修正してください。
+   `children_config.json` または `children_config.toml` 内で各子サーバーのコマンド/引数/環境変数を環境に合わせて修正してください。
 
 ## 起動方法
 
@@ -46,6 +50,13 @@ uvx --from git+https://github.com/OWNER/MCPgateway \
   --children-abstract /absolute/path/to/children_abstract.json
 ```
 ※ OWNER/リポジトリ名は実際のものに置き換えてください。
+
+### codex CLIなどTOML設定で渡す場合
+```bash
+uv run mcp-gateway \
+  --children-config /absolute/path/to/children_config.toml \
+  --children-abstract /absolute/path/to/children_abstract.json
+```
 
 ### 他プロジェクトから使う例（.mcp.json）
 ```json
@@ -67,6 +78,7 @@ uvx --from git+https://github.com/OWNER/MCPgateway \
   }
 }
 ```
+`--children-config` には `.json` / `.toml` のどちらも指定できます。
 
 ## 親サーバーが提供する主なツール
 
@@ -88,8 +100,10 @@ uvx --from git+https://github.com/OWNER/MCPgateway \
 MCPgateway/
 ├── mcp_gateway_server.py         # 親MCPサーバー本体（FastMCPベース）
 ├── children_config.example.json  # 子サーバー設定テンプレート
+├── children_config.example.toml  # 子サーバー設定テンプレート(TOML版)
 ├── children_abstract.example.json# 子サーバー概要テンプレート
 ├── children_config.json          # 実運用用（ユーザー作成）
+├── children_config.toml          # 実運用用（TOMLで使う場合）
 ├── example.mcp.json              # .mcp.json設定例
 ├── pyproject.toml                # パッケージ定義・エントリポイント(mcp-gateway)
 └── README.md
@@ -99,7 +113,7 @@ MCPgateway/
 
 - Python環境が見つからない場合: `uv sync` を実行して仮想環境を作成してください。
 - 子サーバーが起動しない場合:
-  - `children_config.json` のコマンド/パス/環境変数を確認
+  - `children_config.json` / `children_config.toml` のコマンド/パス/環境変数を確認
   - npx/uvx など依存コマンドが使えるか確認
   - 子サーバー側の依存をインストール
 - 子サーバーのstderrを確認したい場合: `DEBUG_MCP=1` を設定して起動するとstderrを出力します。
