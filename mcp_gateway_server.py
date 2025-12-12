@@ -338,6 +338,7 @@ async def start_child_session(child_name: str) -> bool:
 
     status_entry = _CHILDREN_STATUS.setdefault(child_name, {})
     status_entry.update({"status": "starting", "error": None, "started_at": None})
+    logger.info("Starting child server '%s'...", child_name)
 
     stack = AsyncExitStack()
     try:
@@ -424,24 +425,28 @@ async def server_lifespan(app):
     config = get_config()
 
     try:
-        # 起動時に全子サーバーのセッションを初期化
-        success_count = 0
-        failed_names = []
-        for child_name, child_conf in config.get("mcpServers", {}).items():
-            if await start_child_session(child_name):
-                success_count += 1
-            else:
-                failed_names.append(child_name)
+        # 起動時に全子サーバーのセッションを一斉に初期化
+        child_names = list(config.get("mcpServers", {}).keys())
+        if child_names:
+            logger.info("Starting %d child servers in parallel...", len(child_names))
+            startup_tasks = [start_child_session(name) for name in child_names]
+            results = await asyncio.gather(*startup_tasks, return_exceptions=False)
 
-        # 起動結果サマリーをログ出力
-        total_count = len(config.get("mcpServers", {}))
-        if failed_names:
-            logger.warning(
-                "Child servers startup summary: %d/%d succeeded. Failed: %s",
-                success_count, total_count, ", ".join(failed_names)
-            )
+            # 起動結果を集計
+            success_count = sum(1 for r in results if r is True)
+            failed_names = [name for name, r in zip(child_names, results) if r is False]
+
+            # 起動結果サマリーをログ出力
+            total_count = len(child_names)
+            if failed_names:
+                logger.warning(
+                    "Child servers startup summary: %d/%d succeeded. Failed: %s",
+                    success_count, total_count, ", ".join(failed_names)
+                )
+            else:
+                logger.info("All %d child servers started successfully.", total_count)
         else:
-            logger.info("All %d child servers started successfully.", total_count)
+            logger.info("No child servers to start.")
 
         yield {}
     finally:
